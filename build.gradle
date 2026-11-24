@@ -1,0 +1,71 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.16'
+}
+
+group = 'com.interview'
+version = '0.1.0'
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+repositories { mavenCentral() }
+
+sourceSets {
+    exerciseTest { compileClasspath += sourceSets.main.output; runtimeClasspath += sourceSets.main.output }
+    postgresTest { compileClasspath += sourceSets.main.output; runtimeClasspath += sourceSets.main.output }
+}
+configurations {
+    exerciseTestImplementation.extendsFrom testImplementation
+    exerciseTestRuntimeOnly.extendsFrom testRuntimeOnly
+    postgresTestImplementation.extendsFrom testImplementation
+    postgresTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:3.5.16')
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'
+    runtimeOnly 'com.h2database:h2'
+    runtimeOnly 'org.postgresql:postgresql'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    postgresTestImplementation 'org.testcontainers:junit-jupiter'
+    postgresTestImplementation 'org.testcontainers:postgresql'
+}
+
+tasks.withType(JavaCompile).configureEach { options.compilerArgs += '-parameters' }
+tasks.withType(Test).configureEach { useJUnitPlatform(); testLogging { events 'passed', 'skipped', 'failed' } }
+tasks.named('test') { description = 'Green baseline tests only; no exercise acceptance checks.' }
+tasks.register('exerciseTest', Test) {
+    description = 'Public sample acceptance checks. Use -Pexercise=J1, J2, or M2. Initially RED.'
+    group = 'verification'
+    testClassesDirs = sourceSets.exerciseTest.output.classesDirs
+    classpath = sourceSets.exerciseTest.runtimeClasspath
+    def exercise = providers.gradleProperty('exercise').getOrElse('UNSELECTED')
+    useJUnitPlatform { includeTags exercise }
+    doFirst {
+        if (!(exercise in ['J1', 'J2', 'M2'])) {
+            throw new GradleException('Select exactly one exercise: -Pexercise=J1, J2, or M2')
+        }
+    }
+}
+tasks.register('postgresTest', Test) {
+    description = 'Baseline migrations and persistence against real PostgreSQL; requires Docker.'
+    group = 'verification'
+    testClassesDirs = sourceSets.postgresTest.output.classesDirs
+    classpath = sourceSets.postgresTest.runtimeClasspath
+}
+tasks.named('jar') { enabled = false }
+
+// Explicit aliases keep public exercise checks out of the baseline lifecycle.
+['J1', 'J2', 'M2'].each { exercise ->
+    tasks.register("exercise${exercise}", Test) {
+        description = "Public acceptance examples for ${exercise}; intentionally red in the starter."
+        group = 'verification'
+        testClassesDirs = sourceSets.exerciseTest.output.classesDirs
+        classpath = sourceSets.exerciseTest.runtimeClasspath
+        useJUnitPlatform { includeTags exercise }
+    }
+}
